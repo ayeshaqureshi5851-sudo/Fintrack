@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m with context %}
+{% block title %}Settings{% endblock %}
+
+{% block content %}
+{{ m.topbar("Settings", "Make FinTrack work the way you do.") }}
+
+<div class="settings-layout">
+<form method="post" action="{{ url_for('settings_page') }}" class="card panel settings-form">
+  <div class="panel-head"><div><h2>Preferences</h2><p>Saved on this computer in fintrack.db</p></div></div>
+
+  <label class="field"><span class="field-label">Your name</span>
+    <input name="display_name" value="{{ settings.display_name }}" maxlength="30" required></label>
+
+  <label class="field"><span class="field-label">Currency</span>
+    <input value="INR — Indian Rupee (₹)" disabled>
+    <small class="help">FinTrack currently supports Indian Rupees only.</small></label>
+
+  <label class="field"><span class="field-label">Opening balance (₹)</span>
+    <input type="number" name="opening_balance" min="0" step="0.01" value="{{ settings.opening_balance|plain }}">
+    <small class="help">Money you already had before you started using FinTrack. Your balance = opening balance + income − expenses.</small></label>
+
+  <label class="field"><span class="field-label">Monthly spending target (₹) <small>optional</small></span>
+    <input type="number" name="monthly_spend_target" min="0" step="1" value="{{ settings.monthly_spend_target|plain }}">
+    <small class="help">Used for the Money Left Today guide and target alerts. Leave at 0 to switch off.</small></label>
+
+  <label class="field"><span class="field-label">Monthly savings target (₹) <small>optional</small></span>
+    <input type="number" name="monthly_savings_target" min="0" step="1" value="{{ settings.monthly_savings_target|plain }}">
+    <small class="help">Shown on the “Saved This Month” card. “Saved” = money received − money spent this month.</small></label>
+
+  <label class="field"><span class="field-label">Warn me when a budget is this much used (%)</span>
+    <input type="number" name="warn_threshold" min="50" max="99" step="1" value="{{ settings.warn_threshold }}"></label>
+
+  <label class="check"><input type="checkbox" name="show_insights" {{ 'checked' if settings.show_insights }}>
+    <span><b>Show smart insights and notifications</b><small>Budget warnings, spending patterns and gentle encouragement. You can dismiss any of them.</small></span></label>
+
+  <div class="form-actions"><button class="btn-primary" type="submit">Save settings</button></div>
+</form>
+
+<div class="stack">
+  <section class="card panel" id="frequent">
+    <div class="panel-head"><div><h2>⚡ Frequent items</h2><p>One-tap expenses in the Add Transaction form</p></div></div>
+    {% if quick_items %}
+    <ul class="cat-list">
+      {% for q in quick_items %}
+      <li><span>{{ q.icon }} <b>{{ q.label }}</b> · <span class="mono">{{ q.amount|inr }}</span> <small>{{ q.category }}</small></span>
+        <form method="post" action="{{ url_for('delete_quick_item', qid=q.id) }}" data-confirm="Remove “{{ q.label }}” from your frequent items?">
+          <button class="link-btn link-danger" type="submit" aria-label="Remove {{ q.label }}">Remove</button></form></li>
+      {% endfor %}
+    </ul>
+    {% else %}<p class="guide-text">No frequent items yet. Add the small things you buy again and again.</p>{% endif %}
+    <form method="post" action="{{ url_for('add_quick_item') }}" class="add-budget">
+      <strong>Add a frequent item</strong>
+      <label class="field"><span class="field-label">Name</span><input name="label" maxlength="20" placeholder="e.g. Metro" required></label>
+      <label class="field"><span class="field-label">Amount (₹)</span><input type="number" name="amount" min="1" step="1" placeholder="30" required></label>
+      <label class="field"><span class="field-label">Category</span>
+        <select name="category" required>{% for c in expense_cats %}<option value="{{ c.name }}">{{ c.icon }} {{ c.name }}</option>{% endfor %}</select></label>
+      <label class="field"><span class="field-label">Icon</span>
+        <select name="icon">{% for i in ['⚡', '🛺', '🚌', '🚇', '🍿', '🍱', '☕', '🥤', '🍎', '📄', '🖨️', '🎧'] %}<option value="{{ i }}">{{ i }}</option>{% endfor %}</select></label>
+      <button type="submit" class="btn-primary btn-small">Add item</button>
+    </form>
+  </section>
+
+  <section class="card panel">
+    <div class="panel-head"><div><h2>Your data</h2><p>{{ total_tx }} transaction{{ 's' if total_tx != 1 }} saved</p></div></div>
+    <p class="guide-text">Everything is stored in <code>fintrack.db</code> next to app.py and stays after you restart Flask.</p>
+    <a class="btn-ghost btn-small" href="{{ url_for('export_csv') }}">Download transactions (CSV)</a>
+  </section>
+
+  <section class="card panel">
+    <div class="panel-head"><div><h2>Sample data</h2><p>For trying things out</p></div></div>
+    {% if sample_exists %}
+      <p class="guide-text">Sample transactions are currently in your records (they're marked “Sample”). Clearing removes only those.</p>
+      <form method="post" action="{{ url_for('clear_sample') }}" data-confirm="Remove all sample transactions? Your own records will not be touched.">
+        <input type="hidden" name="next" value="{{ url_for('settings_page') }}"><button class="btn-danger btn-small" type="submit">Clear sample data</button></form>
+    {% elif total_tx == 0 %}
+      <p class="guide-text">Want to see FinTrack with some activity? Load a small, clearly marked set of student-style transactions.</p>
+      <form method="post" action="{{ url_for('load_sample') }}"><input type="hidden" name="next" value="{{ url_for('dashboard') }}"><button class="btn-ghost btn-small" type="submit">Load sample data</button></form>
+    {% else %}
+      <p class="guide-text">Sample data can only be loaded into an empty FinTrack, so it never mixes with your own records.</p>
+    {% endif %}
+  </section>
+</div>
+</div>
+{% endblock %}

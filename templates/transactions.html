@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m with context %}
+{% block title %}Transactions{% endblock %}
+
+{% block content %}
+{{ m.topbar("Transactions", "Add what you spend or receive, and look back at your history.") }}
+
+<div class="tx-layout">
+  {# ---------- Quick entry form ---------- #}
+  <section class="card panel tx-entry" id="add">
+    <div class="panel-head"><div><h2>Add a transaction</h2><p>Takes about 10 seconds — date and time are filled in for you.</p></div></div>
+    {{ m.tx_form() }}
+  </section>
+
+  {# ---------- History ---------- #}
+  <section class="card panel tx-history" aria-label="Transaction history">
+    <div class="panel-head">
+      <div><h2>History</h2><p>{{ totals.n }} transaction{{ 's' if totals.n != 1 }}{% if filters_active %} match your filters{% endif %}</p></div>
+      <a class="view-all" href="{{ url_for('export_csv') }}">Export CSV ↓</a>
+    </div>
+
+    <form method="get" action="{{ url_for('transactions') }}" class="filters">
+      <div class="preset-row" role="group" aria-label="Quick date ranges">
+        {% for key, label, link in presets %}
+          <a class="preset {{ 'on' if f_preset == key and not (f_from or f_to) }}" href="{{ link }}">{{ label }}</a>
+        {% endfor %}
+      </div>
+      <div class="filter-grid">
+        <label class="field"><span class="field-label">Search</span>
+          <input type="search" name="q" value="{{ f_q }}" placeholder="Name or category" maxlength="60"></label>
+        <label class="field"><span class="field-label">Type</span>
+          <select name="type">
+            <option value="all" {{ 'selected' if f_kind == 'all' }}>All</option>
+            <option value="expense" {{ 'selected' if f_kind == 'expense' }}>Expenses</option>
+            <option value="income" {{ 'selected' if f_kind == 'income' }}>Income</option>
+          </select></label>
+        <label class="field"><span class="field-label">Category</span>
+          <select name="category">
+            <option value="">All</option>
+            {% for name in all_categories %}<option value="{{ name }}" {{ 'selected' if f_category == name }}>{{ name }}</option>{% endfor %}
+          </select></label>
+        <label class="field"><span class="field-label">From</span>
+          <input type="date" name="from" value="{{ f_from }}"></label>
+        <label class="field"><span class="field-label">To</span>
+          <input type="date" name="to" value="{{ f_to }}"></label>
+      </div>
+      <div class="form-actions">
+        <button type="submit" class="btn-primary btn-small">Apply filters</button>
+        {% if filters_active %}<a class="btn-ghost btn-small" href="{{ url_for('transactions') }}">Clear</a>{% endif %}
+      </div>
+    </form>
+
+    {% if totals.n %}
+    <div class="mini-totals">
+      <span>In <b class="mono up">{{ totals.income|inr }}</b></span>
+      <span>Out <b class="mono down">{{ totals.expense|inr }}</b></span>
+      <span>Net <b class="mono">{{ (totals.income - totals.expense)|inr }}</b></span>
+    </div>
+    {% endif %}
+
+    {% if groups %}
+      {% for g in groups %}
+      <div class="day-group">
+        {% set lbl = g.date|fdate %}
+        <div class="day-head"><span>{{ lbl }}{% if lbl in ('Today', 'Yesterday') %} <small>{{ g.date|fdate_long }}</small>{% endif %}</span><span class="mono">{{ g.net|inr(True) }}</span></div>
+        <ul class="tx-list">{% for t in g.rows %}{{ m.tx_row(t, show_date=False) }}{% endfor %}</ul>
+      </div>
+      {% endfor %}
+
+      {% if pages > 1 %}
+      <nav class="pager" aria-label="Pages">
+        {% if page > 1 %}<a class="btn-ghost btn-small" href="{{ url_for('transactions', **dict(base_args, page=page - 1)) }}">← Newer</a>{% endif %}
+        <span>Page {{ page }} of {{ pages }}</span>
+        {% if page < pages %}<a class="btn-ghost btn-small" href="{{ url_for('transactions', **dict(base_args, page=page + 1)) }}">Older →</a>{% endif %}
+      </nav>
+      {% endif %}
+    {% elif all_tx == 0 %}
+      {% call m.empty("🧾", "No transactions yet", "Record your allowance or your first expense using the form. Seeing where small amounts go is the first step to having money left at the end of the month.") %}
+        <form method="post" action="{{ url_for('load_sample') }}"><input type="hidden" name="next" value="{{ url_for('transactions') }}"><button class="btn-ghost btn-small" type="submit">Or explore with sample data</button></form>
+      {% endcall %}
+    {% else %}
+      {{ m.empty("🔎", "Nothing matches those filters", "Try a wider date range or clear the filters.") }}
+    {% endif %}
+  </section>
+</div>
+{% endblock %}

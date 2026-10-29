@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m with context %}
+{% block title %}Calendar{% endblock %}
+
+{% block content %}
+{{ m.topbar("Calendar", "See which days you spent or received money.") }}
+
+<div class="month-nav">
+  <a class="btn-ghost btn-small" href="{{ url_for('calendar_page', month=prev_month) }}" aria-label="Previous month">←</a>
+  <strong>{{ month_label }}</strong>
+  <a class="btn-ghost btn-small" href="{{ url_for('calendar_page', month=next_month) }}" aria-label="Next month">→</a>
+  {% if not is_current %}<a class="view-all" href="{{ url_for('calendar_page') }}">Back to today</a>{% endif %}
+</div>
+
+<section class="budget-summary" aria-label="Month totals">
+  <div class="card mini-stat"><span>Received</span><b class="mono up">{{ summary.income|inr }}</b></div>
+  <div class="card mini-stat"><span>Spent</span><b class="mono down">{{ summary.expense|inr }}</b></div>
+  <div class="card mini-stat"><span>Net for the month</span><b class="mono">{{ summary.saved|inr }}</b></div>
+</section>
+
+<div class="cal-layout">
+  <section class="card panel" aria-label="Calendar for {{ month_label }}">
+    <div class="cal-legend"><span><i class="dot dot-out"></i> Expense</span><span><i class="dot dot-in"></i> Income</span></div>
+    <table class="cal">
+      <caption class="sr-only">{{ month_label }} — days with transactions are marked</caption>
+      <thead><tr>{% for w in weekdays %}<th scope="col">{{ w }}</th>{% endfor %}</tr></thead>
+      <tbody>
+      {% for week in weeks %}
+        <tr>
+        {% for c in week %}
+          <td class="{{ 'out' if not c.in_month }}">
+            {% if c.in_month %}
+            <a href="{{ url_for('calendar_page', month=month_key, date=c.iso) }}"
+               class="cal-day {{ 'today' if c.is_today }} {{ 'selected' if c.is_selected }} {{ 'has' if c.info }}"
+               {% if c.is_selected %}aria-current="date"{% endif %}
+               aria-label="{{ c.date.day }} {{ month_label }}{% if c.info %}: {% if c.info.expense %}spent {{ c.info.expense|inr }}{% endif %}{% if c.info.income %} received {{ c.info.income|inr }}{% endif %}{% else %}: no transactions{% endif %}">
+              <span class="cal-num">{{ c.date.day }}</span>
+              {% if c.info %}
+                <span class="cal-dots">
+                  {% if c.info.expense %}<i class="dot dot-out"></i>{% endif %}
+                  {% if c.info.income %}<i class="dot dot-in"></i>{% endif %}
+                </span>
+                {% if c.info.expense %}<span class="cal-amt">{{ c.info.expense|inr }}</span>{% endif %}
+              {% endif %}
+            </a>
+            {% endif %}
+          </td>
+        {% endfor %}
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% if summary.count == 0 %}
+      <p class="cal-empty">No transactions in {{ month_label }} yet — days with activity will show dots here.</p>
+    {% endif %}
+  </section>
+
+  <section class="card panel" aria-live="polite">
+    {% if selected %}
+      <div class="panel-head"><div><h2>{{ selected|fdate_long }}</h2><p>{{ day_rows|length }} transaction{{ 's' if day_rows|length != 1 }}</p></div>
+        <a class="view-all" href="{{ url_for('transactions', range='custom', **{'from': selected, 'to': selected}) }}">Open in Transactions →</a></div>
+      <div class="day-totals">
+        <div><span>Received</span><b class="mono up">{{ day_totals.income|inr }}</b></div>
+        <div><span>Spent</span><b class="mono down">{{ day_totals.expense|inr }}</b></div>
+        <div><span>Net</span><b class="mono">{{ day_totals.net|inr }}</b></div>
+      </div>
+      {% if day_rows %}
+        <ul class="tx-list">{% for t in day_rows %}{{ m.tx_row(t, show_date=False) }}{% endfor %}</ul>
+      {% else %}
+        {% call m.empty("🌤️", "Nothing recorded on this day", "If you spent or received something, you can still add it.") %}
+          <button type="button" class="btn-ghost btn-small" data-open-tx data-date="{{ selected }}">Add a transaction for this day</button>
+        {% endcall %}
+      {% endif %}
+    {% else %}
+      {{ m.empty("👆", "Pick a date", "Select a day on the calendar to see what you spent or received.") }}
+    {% endif %}
+  </section>
+</div>
+{% endblock %}

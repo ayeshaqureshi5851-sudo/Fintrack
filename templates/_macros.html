@@ -1,0 +1,194 @@
+{# Reusable pieces used by several pages. Import with:  {% import "_macros.html" as m with context %} #}
+
+{# ---- Page header: greeting/title on the left; Add button, bell and avatar on the right ---- #}
+{% macro topbar(title, subtitle) %}
+<header class="topbar">
+  <div>
+    <h1 class="greeting">{{ title }}</h1>
+    <p class="subtitle">{{ subtitle }}</p>
+  </div>
+
+  <div class="topbar-actions">
+    <button type="button" class="btn-add" data-open-tx>
+      <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M11 11V5h2v6h6v2h-6v6h-2v-6H5v-2h6Z"/></svg>
+      Add Transaction
+    </button>
+
+    <div class="bell-wrap">
+      {% set bell_count = nav_insight_count %}
+      <button type="button" class="icon-btn" id="bellBtn" aria-label="Notifications ({{ bell_count }})" aria-expanded="false" aria-controls="bellPanel">
+        <svg viewBox="0 0 24 24" width="19" height="19" aria-hidden="true"><path fill="currentColor" d="M12 2a6 6 0 0 0-6 6v3.6L4.3 15A1 1 0 0 0 5 17h14a1 1 0 0 0 .7-1.7L18 11.6V8a6 6 0 0 0-6-6Zm0 20a2.5 2.5 0 0 0 2.45-2h-4.9A2.5 2.5 0 0 0 12 22Z"/></svg>
+        {% if bell_count %}<span class="notif-count">{{ bell_count if bell_count < 10 else '9+' }}</span>{% endif %}
+      </button>
+      <div class="bell-panel" id="bellPanel" hidden>
+        <div class="bell-head">Notifications</div>
+        {% if not settings.show_insights %}
+          <p class="bell-empty">Insights are turned off. You can turn them on in <a href="{{ url_for('settings_page') }}">Settings</a>.</p>
+        {% elif nav_insights %}
+          <ul class="bell-list">
+            {% for i in nav_insights %}
+            <li class="bell-item bell-{{ i.kind }}" data-insight-key="{{ i.key }}">
+              <span class="bell-icon" aria-hidden="true">{{ i.icon }}</span>
+              <div class="bell-text">
+                <a href="{{ url_for(i.endpoint) }}"><strong>{{ i.title }}</strong></a>
+                <span>{{ i.what }}</span>
+              </div>
+              <button type="button" class="dismiss-btn" data-dismiss="{{ i.key }}" aria-label="Dismiss: {{ i.title }}">✕</button>
+            </li>
+            {% endfor %}
+          </ul>
+          <a class="bell-foot" href="{{ url_for('ai_assistant') }}">See all insights →</a>
+        {% else %}
+          <p class="bell-empty">You're all caught up. Insights show up here when your data has something useful to say.</p>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="avatar avatar--top" title="{{ settings.display_name }}" aria-hidden="true">{{ settings.display_name[:2]|upper }}</div>
+  </div>
+</header>
+{% endmacro %}
+
+
+{# ---- A dismissible insight card (what / why / next) ---- #}
+{% macro insight_card(i, compact=False) %}
+<article class="insight-card insight-{{ i.kind }}" data-insight-key="{{ i.key }}">
+  <div class="insight-icon" aria-hidden="true">{{ i.icon }}</div>
+  <div class="insight-body">
+    <h3>{{ i.title }}</h3>
+    <p>{{ i.what }}</p>
+    {% if not compact %}
+      <p class="insight-why"><b>Why it matters:</b> {{ i.why }}</p>
+    {% endif %}
+    <p class="insight-next"><b>Next step:</b> {{ i.next }}</p>
+  </div>
+  <button type="button" class="dismiss-btn" data-dismiss="{{ i.key }}" aria-label="Dismiss: {{ i.title }}">✕</button>
+</article>
+{% endmacro %}
+
+
+{# ---- One transaction row (used on the dashboard, list and calendar) ---- #}
+{% macro tx_row(t, show_date=True, actions=True) %}
+<li class="tx-row">
+  <div class="tx-left">
+    <span class="tx-icon" style="background: {{ t.color }}22; color: {{ t.color }}" aria-hidden="true">{{ t.icon }}</span>
+    <div>
+      <div class="tx-name">{{ t.description or t.category }}{% if t.is_demo %} <span class="badge-sample">Sample</span>{% endif %}</div>
+      <div class="tx-date">
+        {% if show_date %}{{ t.tx_date|fdate }} · {% endif %}{{ t.tx_time|ftime }} · {{ t.category }}<span class="sr-only"> ({{ 'income' if t.type == 'income' else 'expense' }})</span>
+      </div>
+    </div>
+  </div>
+  <div class="tx-right">
+    <div class="tx-amount {{ 'up' if t.type == 'income' else 'down' }}">
+      {{ ('+' if t.type == 'income' else '-') ~ (t.amount|inr) }}
+    </div>
+    {% if actions %}
+    <div class="tx-actions">
+      <button type="button" class="link-btn" data-edit-tx='{{ {"id": t.id, "type": t.type, "amount": t.amount, "category": t.category, "description": t.description, "tx_date": t.tx_date, "tx_time": t.tx_time}|tojson|forceescape }}'
+              aria-label="Edit {{ t.description or t.category }}">Edit</button>
+      <form method="post" action="{{ url_for('delete_transaction', tid=t.id) }}" data-confirm="Delete “{{ t.description or t.category }}” ({{ t.amount|inr }})? This can't be undone.">
+        <input type="hidden" name="next" value="{{ current_path }}">
+        <button type="submit" class="link-btn link-danger" aria-label="Delete {{ t.description or t.category }}">Delete</button>
+      </form>
+    </div>
+    {% endif %}
+  </div>
+</li>
+{% endmacro %}
+
+
+{# ---- Friendly empty state ---- #}
+{% macro empty(icon, title, text) %}
+<div class="empty-state">
+  <div class="empty-icon" aria-hidden="true">{{ icon }}</div>
+  <h3>{{ title }}</h3>
+  <p>{{ text }}</p>
+  {{ caller() if caller else '' }}
+</div>
+{% endmacro %}
+
+
+{# ---- The transaction form (used in the pop-up and, on the Transactions page, inline) ---- #}
+{% macro tx_form() %}
+<form method="post" action="{{ url_for('add_transaction') }}" class="tx-form" novalidate>
+  <input type="hidden" name="next" value="{{ current_path }}">
+
+  <div class="seg" role="radiogroup" aria-label="Transaction type">
+    <label class="seg-opt seg-expense"><input type="radio" name="type" value="expense" checked><span>Expense</span></label>
+    <label class="seg-opt seg-income"><input type="radio" name="type" value="income"><span>Income</span></label>
+  </div>
+
+  <label class="field" data-hide-frequent>
+    <span class="field-label">Amount</span>
+    <span class="amount-wrap">
+      <span class="amount-prefix" aria-hidden="true">₹</span>
+      <input type="number" name="amount" inputmode="decimal" step="0.01" min="0.01" max="10000000" placeholder="0" required aria-describedby="amountHelp">
+    </span>
+  </label>
+
+  <section class="quick-section" aria-label="Frequent expenses">
+    <div class="field-label">⚡ Frequent <small>— tap one to add it instantly (uses the date and time below)</small></div>
+    {% if quick_items %}
+    <div class="quick-row">
+      {% for q in quick_items %}
+      <button type="submit" class="quick-chip" formaction="{{ url_for('quick_add', qid=q.id) }}" formnovalidate data-quick
+              title="{{ q.label }} — {{ q.amount|inr }} ({{ q.category }})">
+        <span aria-hidden="true">{{ q.icon }}</span>
+        <b>{{ q.amount|inr }}</b>
+        <span class="quick-name">{{ q.label }}</span>
+      </button>
+      {% endfor %}
+    </div>
+    {% else %}
+    <p class="help">No frequent items yet — add some in <a href="{{ url_for('settings_page') }}#frequent">Settings</a>.</p>
+    {% endif %}
+  </section>
+
+  <fieldset class="cat-group" data-kind="expense">
+    <legend class="field-label">Category <small>— or pick one and type the amount</small></legend>
+    <div class="chips">
+      {% for c in expense_cats %}
+      <label class="chip"><input type="radio" name="category" value="{{ c.name }}"><span>{{ c.icon }} {{ c.name }}</span></label>
+      {% endfor %}
+    </div>
+  </fieldset>
+
+  <fieldset class="cat-group" data-kind="income" hidden>
+    <legend class="field-label">Category</legend>
+    <div class="chips">
+      {% for c in income_cats %}
+      <label class="chip"><input type="radio" name="category" value="{{ c.name }}" disabled><span>{{ c.icon }} {{ c.name }}</span></label>
+      {% endfor %}
+    </div>
+  </fieldset>
+
+  <label class="field custom-cat" hidden>
+    <span class="field-label">New category name <small>(optional — leave empty to use “Other”)</small></span>
+    <input type="text" name="custom_category" maxlength="24" placeholder="e.g. Gym, Pets, Hostel fees">
+  </label>
+
+  <label class="field" data-hide-frequent>
+    <span class="field-label">Description <small>(optional)</small></span>
+    <input type="text" name="description" maxlength="60" placeholder="e.g. Canteen lunch">
+  </label>
+
+  <div class="field-row">
+    <label class="field">
+      <span class="field-label">Date</span>
+      <input type="date" name="tx_date" value="{{ today_iso }}" max="{{ today_iso }}" required>
+    </label>
+    <label class="field">
+      <span class="field-label">Time</span>
+      <input type="time" name="tx_time" value="{{ now_hhmm }}" required>
+    </label>
+  </div>
+
+  <div class="form-errors" role="alert" aria-live="assertive" hidden></div>
+
+  <div class="form-actions">
+    <button type="submit" class="btn-primary" data-save data-hide-frequent>Save Transaction</button>
+    <button type="button" class="btn-ghost" data-close-dialog>Cancel</button>
+  </div>
+</form>
+{% endmacro %}

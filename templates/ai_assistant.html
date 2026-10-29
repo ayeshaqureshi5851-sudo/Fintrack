@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m with context %}
+{% block title %}FinTrack AI{% endblock %}
+
+{% block content %}
+{{ m.topbar("FinTrack Assistant✨", "Ask about your money and get savings ideas.") }}
+
+<div class="ai-layout">
+  <section class="card panel chat-card" aria-label="Chat with FinTrack Assistant">
+    <div class="panel-head">
+      <div><h2>Ask FinTrack Assistant</h2>
+      <p>A simple rule-based assistant — not a language model. It answers from your saved transactions only.</p></div>
+    </div>
+
+    <div class="chat-log" id="chatLog" role="log" aria-live="polite">
+      <div class="msg msg-bot">Hi {{ settings.display_name }}! 👋 Ask me about your spending, budgets or balance — or tap one of the questions below.</div>
+    </div>
+
+    <div class="q-chips" id="qChips">
+      {% for q in examples %}<button type="button" class="q-chip" data-ask="{{ q }}">{{ q }}</button>{% endfor %}
+    </div>
+
+    <form class="chat-form" id="chatForm" autocomplete="off" data-initial="{{ initial_q }}">
+      <label class="sr-only" for="chatInput">Your question</label>
+      <input id="chatInput" type="text" maxlength="200" placeholder="Ask something, e.g. How much did I spend today?" required>
+      <button class="btn-primary" type="submit">Ask</button>
+    </form>
+  </section>
+
+  <div class="stack">
+    <section class="card panel" aria-label="Insights">
+      <div class="panel-head"><div><h2>Insights for you</h2><p>Spotted from your real transactions</p></div></div>
+      {% if not settings.show_insights %}
+        <p class="guide-text">Insights are turned off. Turn them on in <a href="{{ url_for('settings_page') }}">Settings</a>.</p>
+      {% elif all_insights %}
+        <div class="stack-tight">{% for i in all_insights %}{{ m.insight_card(i) }}{% endfor %}</div>
+      {% elif total_tx < 5 %}
+        {{ m.empty("🔍", "Not enough data yet", "Record a few more transactions and I'll start spotting patterns. I only show insights your data supports.") }}
+      {% else %}
+        {{ m.empty("🙌", "Nothing to flag right now", "Your spending looks steady. I'll speak up when something stands out.") }}
+      {% endif %}
+      {% if hidden_count %}
+      <form method="post" action="{{ url_for('restore_insights') }}" class="restore-form">
+        <small>{{ hidden_count }} dismissed.</small> <button class="link-btn" type="submit">Show them again</button>
+      </form>
+      {% endif %}
+    </section>
+
+    <section class="card panel" id="review" aria-label="Weekly check-in">
+      <div class="panel-head"><div><h2>Weekly check-in</h2><p>Last 7 days</p></div></div>
+      {% if week.count %}
+        <p class="guide-text">You spent <b class="mono">{{ week.spent|inr }}</b> over {{ week.count }} purchase{{ 's' if week.count != 1 }}
+          {% if week.change is not none %}— {{ week.change|abs }}% {{ 'more' if week.change > 0 else 'less' }} than the 7 days before ({{ week.prev|inr }}){% endif %}.
+          {% if week.top %}Most went on {{ week.top.icon }} {{ week.top.category }} ({{ week.top.total|inr }}).{% endif %}</p>
+        {% if week.reviewed %}
+          <p class="done-note">✅ You've reviewed this week. Nice habit!</p>
+        {% else %}
+          <form method="post" action="{{ url_for('mark_review') }}"><button class="btn-ghost btn-small" type="submit">Mark this week as reviewed</button></form>
+        {% endif %}
+      {% else %}
+        <p class="guide-text">No spending recorded in the last 7 days.</p>
+      {% endif %}
+    </section>
+
+    <section class="card panel" aria-label="Milestones">
+      <div class="panel-head"><div><h2>Milestones</h2><p>Small wins along the way</p></div></div>
+      <ul class="milestones">
+        {% for ms in milestones %}
+        <li class="{{ 'done' if ms.done }}"><span class="ms-icon" aria-hidden="true">{{ ms.icon }}</span>
+          <div><b>{{ ms.title }}</b><small>{{ ms.desc }}</small></div>
+          <span class="ms-state">{{ 'Done' if ms.done else 'Up next' }}</span></li>
+        {% endfor %}
+      </ul>
+    </section>
+  </div>
+</div>
+{% endblock %}

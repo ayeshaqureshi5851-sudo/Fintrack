@@ -1,0 +1,182 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m with context %}
+{% block title %}Dashboard{% endblock %}
+
+{% block content %}
+{{ m.topbar("Hey " ~ settings.display_name ~ "! 👋", "Here's how your money is looking this month.") }}
+
+{# ---------- Summary cards (all numbers come from the database) ---------- #}
+<section class="summary-grid" aria-label="Money summary">
+  <div class="card summary-card summary-card--dark">
+    <div class="summary-top">
+      <span class="summary-label">Total Balance</span>
+      <span class="summary-icon"><svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M3 7h18v3H3V7Zm0 5h18v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-6Zm12 3a2 2 0 1 0 0 4 2 2 0 0 0 0-4Z"/></svg></span>
+    </div>
+    <div class="summary-value">{{ balance|inr }}</div>
+    <div class="summary-trend">All income − all expenses{% if settings.opening_balance %} + opening balance{% endif %}</div>
+  </div>
+
+  <div class="card summary-card">
+    <div class="summary-top">
+      <span class="summary-label">Money Received</span>
+      <span class="summary-icon icon-emerald"><svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M12 3 4 11h5v10h6V11h5L12 3Z"/></svg></span>
+    </div>
+    <div class="summary-value">{{ summary.income|inr }}</div>
+    {% if income_change is not none %}
+      <div class="summary-trend {{ 'up' if income_change >= 0 else 'down' }}">{{ '▲' if income_change >= 0 else '▼' }} {{ income_change|abs }}% vs last month</div>
+    {% else %}
+      <div class="summary-trend">Received in {{ month_name }}</div>
+    {% endif %}
+  </div>
+
+  <div class="card summary-card">
+    <div class="summary-top">
+      <span class="summary-label">Spent This Month</span>
+      <span class="summary-icon icon-coral"><svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="m12 21 8-8h-5V3H9v10H4l8 8Z"/></svg></span>
+    </div>
+    <div class="summary-value">{{ summary.expense|inr }}</div>
+    {% if spent_change is not none %}
+      <div class="summary-trend {{ 'down' if spent_change > 0 else 'up' }}">{{ '▲' if spent_change > 0 else '▼' }} {{ spent_change|abs }}% vs same days last month</div>
+    {% else %}
+      <div class="summary-trend">Spent in {{ month_name }}</div>
+    {% endif %}
+  </div>
+
+  <div class="card summary-card">
+    <div class="summary-top">
+      <span class="summary-label">Saved This Month</span>
+      <span class="summary-icon icon-amber"><svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M12 2 2 7l10 5 8-4v6h2V7L12 2Zm-8 9.5V17c0 2.2 3.6 4 8 4s8-1.8 8-4v-5.5l-8 4-8-4Z"/></svg></span>
+    </div>
+    <div class="summary-value {{ 'neg' if summary.saved < 0 }}">{{ summary.saved|inr }}</div>
+    {% if settings.monthly_savings_target %}
+      {% set sp = ((summary.saved / settings.monthly_savings_target * 100)|round|int) if summary.saved > 0 else 0 %}
+      <div class="summary-trend {{ 'up' if sp >= 100 }}">{{ sp }}% of your {{ settings.monthly_savings_target|inr }} target</div>
+    {% else %}
+      <div class="summary-trend">Money received − spent this month</div>
+    {% endif %}
+  </div>
+</section>
+
+{% if total_tx == 0 %}
+  {# ---------- Brand-new, empty FinTrack ---------- #}
+  <section class="card panel welcome">
+    {% call m.empty("🌱", "Welcome to FinTrack, " ~ settings.display_name ~ "!", "Nothing is recorded yet, so every number above is ₹0. Start with your allowance or your first expense — noting down spends as they happen is the habit that helps you finish the month with money left.") %}
+      <div class="empty-actions">
+        <button type="button" class="btn-primary" data-open-tx>+ Add your first transaction</button>
+        <form method="post" action="{{ url_for('load_sample') }}">
+          <input type="hidden" name="next" value="{{ url_for('dashboard') }}">
+          <button type="submit" class="btn-ghost">Explore with sample data</button>
+        </form>
+      </div>
+      <p class="empty-note">Sample data is clearly marked and can be removed any time.</p>
+    {% endcall %}
+  </section>
+{% else %}
+
+<div class="dash-grid">
+  <div class="stack">
+
+    {# ---------- One or two insights ---------- #}
+    {% if insights %}
+    <section aria-label="Savings insights" class="stack-tight">
+      {% for i in insights %}{{ m.insight_card(i, compact=True) }}{% endfor %}
+      {% if more_insights %}<a class="more-link" href="{{ url_for('ai_assistant') }}">+{{ more_insights }} more insight{{ 's' if more_insights != 1 }} →</a>{% endif %}
+    </section>
+    {% endif %}
+
+    {# ---------- Compact spending overview ---------- #}
+    <section class="card panel">
+      <div class="panel-head">
+        <div>
+          <h2>Spending Overview</h2>
+          <p>Everyday spending, last 6 months</p>
+        </div>
+        {% if top_cat %}<div class="legend-chip">{{ top_cat.icon }} Top this month: {{ top_cat.category }}</div>{% endif %}
+      </div>
+      <div class="chart-wrap chart-wrap--compact">
+        <canvas id="spendingChart" aria-label="Line chart of monthly spending for the last six months" role="img"></canvas>
+      </div>
+    </section>
+
+    {# ---------- Recent transactions preview ---------- #}
+    <section class="card panel">
+      <div class="panel-head">
+        <div>
+          <h2>Recent Transactions</h2>
+          <p>Your latest spends and money in</p>
+        </div>
+        <a href="{{ url_for('transactions') }}" class="view-all">View all →</a>
+      </div>
+      <ul class="tx-list">
+        {% for t in recent %}{{ m.tx_row(t, actions=False) }}{% endfor %}
+      </ul>
+    </section>
+  </div>
+
+  <aside class="stack" aria-label="Helpers">
+    {# ---------- Money Left Today ---------- #}
+    <section class="card panel guide-card">
+      <div class="panel-head"><div><h2>Money Left Today</h2><p>A friendly daily spending guide</p></div></div>
+      {% if guide.status == 'ok' %}
+        <div class="guide-value {{ 'neg' if guide.left_today < 0 }}">{{ guide.left_today|inr }}</div>
+        <div class="progress-track" role="progressbar" aria-label="Share of today's guide spent" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ guide.used_pct|round|int }}">
+          <div class="progress-fill" style="width: {{ guide.used_pct }}%; background: {{ '#E4574C' if guide.left_today < 0 else '#1F9D6B' }}"></div>
+        </div>
+        <p class="guide-text">
+          {% if guide.left_today >= 0 %}left of today's {{ guide.guide|inr }} guide.{% else %}past today's {{ guide.guide|inr }} guide — it's only an estimate, and tomorrow is a fresh day.{% endif %}
+          You've spent {{ guide.spent_today|inr }} today.
+        </p>
+        <details class="how">
+          <summary>How is this worked out?</summary>
+          <p>{{ guide.pool|inr }} (from {{ guide.basis_text }}) ÷ {{ guide.days_left }} day(s) left this month = {{ guide.guide|inr }} a day. {{ guide.assumption }} It's an estimate, not a hard limit.</p>
+        </details>
+      {% elif guide.status == 'tight' %}
+        <p class="guide-text">Based on {{ guide.basis_text }}, there's no room left in this plan for the rest of the month. That's only an estimate — add money you've received or adjust your target in <a href="{{ url_for('settings_page') }}">Settings</a>.</p>
+      {% else %}
+        <p class="guide-text">{{ guide.missing }}</p>
+      {% endif %}
+    </section>
+
+    {# ---------- Savings goal ---------- #}
+    <section class="card panel">
+      <div class="panel-head"><div><h2>Savings Goal</h2><p>Money you've set aside</p></div><a class="view-all" href="{{ url_for('budget') }}#goals">Manage →</a></div>
+      {% if goal %}
+        <div class="goal-name">{{ goal.name }}</div>
+        <div class="goal-figures"><span class="mono">{{ goal.saved|inr }}</span> of <span class="mono muted">{{ goal.target|inr }}</span></div>
+        <div class="progress-track" role="progressbar" aria-label="{{ goal.name }} progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ goal.pct }}">
+          <div class="progress-fill" style="width: {{ goal.pct }}%; background:#E8A33D"></div>
+        </div>
+        <div class="budget-percent">{{ goal.pct }}% · {{ goal.remaining|inr }} to go{% if goal.target_date %} · by {{ goal.target_date|fdate }}{% endif %}</div>
+      {% elif goal_count %}
+        <p class="guide-text">All your goals are reached — 🎉 nicely done. Start a new one on My Budget.</p>
+      {% else %}
+        <p class="guide-text">Saving for headphones, a trip or an emergency fund? Create a goal and track it here.</p>
+        <a class="btn-ghost btn-small" href="{{ url_for('budget') }}#goals">Create a goal</a>
+      {% endif %}
+    </section>
+
+    {# ---------- Compact FinTrack AI panel ---------- #}
+    <section class="card panel ai-panel">
+      <div class="panel-head"><div><h2>✨ FinTrack Assistant</h2><p>Rule-based savings assistant</p></div></div>
+      {% if top_cat %}
+        <p class="guide-text">This month, <b>{{ top_cat.category }}</b> is your biggest category at <span class="mono">{{ top_cat.total|inr }}</span> ({{ top_cat.pct|round|int }}% of spending).</p>
+      {% else %}
+        <p class="guide-text">No spending recorded this month yet.</p>
+      {% endif %}
+      <div class="q-chips">
+        {% for q in questions %}<a class="q-chip" href="{{ url_for('ai_assistant', q=q) }}">{{ q }}</a>{% endfor %}
+      </div>
+      <a class="view-all" href="{{ url_for('ai_assistant') }}">Ask anything →</a>
+    </section>
+  </aside>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block page_data %}
+<script id="ft-page" type="application/json">{{ {"series": series}|tojson }}</script>
+{% endblock %}
+
+{% block scripts_before %}
+{% if total_tx %}<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>{% endif %}
+{% endblock %}

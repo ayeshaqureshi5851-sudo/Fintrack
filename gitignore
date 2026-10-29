@@ -1,0 +1,5 @@
+# Private - never share or upload these
+fintrack.db
+credentials.json
+gmail_token.json
+__pycache__/

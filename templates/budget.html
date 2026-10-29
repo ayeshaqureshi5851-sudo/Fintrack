@@ -1,0 +1,144 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m with context %}
+{% block title %}My Budget{% endblock %}
+
+{% macro progress(label, pct, bar, color) %}
+<div class="progress-track" role="progressbar" aria-label="{{ label }}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ bar|round|int }}">
+  <div class="progress-fill" style="width: {{ bar }}%; background: {{ color }}"></div>
+</div>
+{% endmacro %}
+
+{% block content %}
+{{ m.topbar("My Budget", "Keep track of your everyday student spending.") }}
+
+<div class="month-nav">
+  <a class="btn-ghost btn-small" href="{{ url_for('budget', month=prev_month) }}" aria-label="Previous month">←</a>
+  <strong>{{ month_label }}</strong>
+  {% if can_next %}<a class="btn-ghost btn-small" href="{{ url_for('budget', month=next_month) }}" aria-label="Next month">→</a>{% else %}<span class="btn-ghost btn-small disabled" aria-hidden="true">→</span>{% endif %}
+  {% if not is_current %}<a class="view-all" href="{{ url_for('budget') }}">This month</a>{% endif %}
+</div>
+
+<section class="budget-summary" aria-label="Budget totals">
+  <div class="card mini-stat"><span>Total budgeted</span><b class="mono">{{ total_limit|inr }}</b></div>
+  <div class="card mini-stat"><span>Spent in these categories</span><b class="mono">{{ total_spent|inr }}</b></div>
+  <div class="card mini-stat"><span>{{ 'Still available' if total_remaining >= 0 else 'Over by' }}</span><b class="mono {{ 'down' if total_remaining < 0 else 'up' }}">{{ (total_remaining|abs)|inr }}</b></div>
+</section>
+
+<section class="card panel" aria-label="Category budgets">
+  <div class="panel-head"><div><h2>Category budgets</h2><p>Monthly limits you can change any time. Warnings start at {{ settings.warn_threshold }}% used.</p></div></div>
+
+  {% if rows %}
+  <div class="budget-grid budget-grid--3">
+    {% for b in rows %}
+    <article class="budget-item budget-{{ b.state }}">
+      <div class="budget-item-top">
+        <span class="budget-icon" style="background: {{ b.color }}22; color: {{ b.color }}" aria-hidden="true">{{ b.icon }}</span>
+        <div class="budget-info">
+          <div class="budget-name">{{ b.category }}</div>
+          <div class="budget-figures"><span class="mono">{{ b.spent|inr }}</span> / <span class="mono muted">{{ b.limit|inr }}</span></div>
+        </div>
+        <span class="state-pill state-{{ b.state }}">{{ b.label }}</span>
+      </div>
+      {{ progress(b.category ~ ' budget used', b.pct, b.bar, '#E4574C' if b.state == 'over' else ('#E8A33D' if b.state == 'warn' else b.color)) }}
+      <div class="budget-meta">
+        <span>{{ b.pct }}% used</span>
+        {% if b.over %}<span class="down">{{ b.over|inr }} over budget</span>{% else %}<span>{{ b.remaining|inr }} left</span>{% endif %}
+      </div>
+      {% if b.state == 'over' %}<p class="budget-note">You've gone past this limit. Spending can still be recorded — adjust the limit below if it was too low.</p>
+      {% elif b.state == 'warn' %}<p class="budget-note">Heads up — this budget is almost used up.</p>{% endif %}
+      <form method="post" action="{{ url_for('save_budget') }}" class="inline-form">
+        <input type="hidden" name="category" value="{{ b.category }}">
+        <input type="hidden" name="month" value="{{ month_key if not is_current else '' }}">
+        <label class="sr-only" for="lim-{{ loop.index }}">Monthly limit for {{ b.category }}</label>
+        <span class="amount-wrap amount-wrap--small"><span class="amount-prefix">₹</span>
+          <input id="lim-{{ loop.index }}" type="number" name="limit" min="1" step="1" value="{{ b.limit|plain }}" required></span>
+        <button type="submit" class="btn-ghost btn-small">Update</button>
+      </form>
+      <form method="post" action="{{ url_for('remove_budget') }}" data-confirm="Remove the {{ b.category }} budget? Your transactions are not affected.">
+        <input type="hidden" name="category" value="{{ b.category }}">
+        <input type="hidden" name="month" value="{{ month_key if not is_current else '' }}">
+        <button type="submit" class="link-btn link-danger">Remove budget</button>
+      </form>
+    </article>
+    {% endfor %}
+  </div>
+  {% else %}
+    {{ m.empty("📊", "No budgets yet", "Pick a category below and set a monthly limit. A budget turns your spending history into a plan.") }}
+  {% endif %}
+
+  {% if unbudgeted %}
+  <form method="post" action="{{ url_for('save_budget') }}" class="add-budget">
+    <input type="hidden" name="month" value="{{ month_key if not is_current else '' }}">
+    <strong>Add a budget</strong>
+    <label class="field"><span class="sr-only">Category</span>
+      <select name="category" required>
+        <option value="">Choose a category</option>
+        {% for c in unbudgeted %}<option value="{{ c.name }}">{{ c.icon }} {{ c.name }}</option>{% endfor %}
+      </select></label>
+    <span class="amount-wrap amount-wrap--small"><span class="amount-prefix">₹</span>
+      <input type="number" name="limit" min="1" step="1" placeholder="Monthly limit" aria-label="Monthly limit" required></span>
+    <button type="submit" class="btn-primary btn-small">Save budget</button>
+  </form>
+  {% endif %}
+</section>
+
+<section class="card panel" id="goals" aria-label="Savings goals">
+  <div class="panel-head">
+    <div><h2>Savings goals</h2><p>Save for something you want. Total set aside: <b class="mono">{{ goals_total|inr }}</b></p></div>
+  </div>
+  <p class="explain">💡 <b>How saving works here:</b> the amount saved is money <i>you</i> choose to set aside — FinTrack doesn't move money automatically or change it when you record an expense. When you put money aside, use “Add money”.
+    {% if month_saved > 0 %} This month you have <b class="mono">{{ month_saved|inr }}</b> unspent that you could set aside.{% endif %}</p>
+
+  {% if goals %}
+  <div class="goal-grid">
+    {% for g in goals %}
+    <article class="goal-item {{ 'reached' if g.reached }}">
+      <div class="goal-top">
+        <h3>{{ '🏆 ' if g.reached }}{{ g.name }}</h3>
+        <span class="mono">{{ g.pct }}%</span>
+      </div>
+      {{ progress(g.name ~ ' progress', g.pct, g.pct, '#1F9D6B' if g.reached else '#E8A33D') }}
+      <div class="goal-figures"><span class="mono">{{ g.saved|inr }}</span> of <span class="mono muted">{{ g.target|inr }}</span> ·
+        {% if g.reached %}goal reached 🎉{% else %}<b class="mono">{{ g.remaining|inr }}</b> to go{% endif %}</div>
+      {% if g.target_date %}
+        <div class="goal-date">Target: {{ g.target_date|fdate }}
+          {% if g.monthly_needed %}· about <b class="mono">{{ g.monthly_needed|inr }}</b>/month to get there{% elif g.days_to_go is not none and g.days_to_go <= 0 and not g.reached %}· target date reached{% endif %}</div>
+      {% endif %}
+      <form method="post" action="{{ url_for('contribute_goal', gid=g.id) }}" class="inline-form">
+        <label class="sr-only" for="c-{{ g.id }}">Amount for {{ g.name }}</label>
+        <span class="amount-wrap amount-wrap--small"><span class="amount-prefix">₹</span><input id="c-{{ g.id }}" type="number" name="amount" min="1" step="1" placeholder="Amount" required></span>
+        <button type="submit" name="mode" value="add" class="btn-primary btn-small">Add money</button>
+        <button type="submit" name="mode" value="withdraw" class="btn-ghost btn-small">Take out</button>
+      </form>
+      <details class="how">
+        <summary>Edit goal</summary>
+        <form method="post" action="{{ url_for('edit_goal', gid=g.id) }}" class="stack-form">
+          <label class="field"><span class="field-label">Name</span><input name="name" value="{{ g.name }}" maxlength="40" required></label>
+          <div class="field-row">
+            <label class="field"><span class="field-label">Target (₹)</span><input type="number" name="target" min="1" step="1" value="{{ g.target|plain }}" required></label>
+            <label class="field"><span class="field-label">Saved so far (₹)</span><input type="number" name="saved" min="0" step="1" value="{{ g.saved|plain }}" required></label>
+          </div>
+          <label class="field"><span class="field-label">Target date <small>(optional)</small></span><input type="date" name="target_date" value="{{ g.target_date or '' }}" min="{{ today_iso }}"></label>
+          <button type="submit" class="btn-primary btn-small">Save changes</button>
+        </form>
+      </details>
+      <form method="post" action="{{ url_for('delete_goal', gid=g.id) }}" data-confirm="Delete the goal “{{ g.name }}”?">
+        <button type="submit" class="link-btn link-danger">Delete goal</button>
+      </form>
+    </article>
+    {% endfor %}
+  </div>
+  {% else %}
+    {{ m.empty("🎯", "No savings goals yet", "Headphones, a college trip, an emergency fund — give your unspent money a purpose.") }}
+  {% endif %}
+
+  <form method="post" action="{{ url_for('add_goal') }}" class="add-budget goal-form">
+    <strong>New goal</strong>
+    <label class="field"><span class="field-label">Goal name</span><input name="name" maxlength="40" placeholder="e.g. Headphones" required></label>
+    <label class="field"><span class="field-label">Target (₹)</span><input type="number" name="target" min="1" step="1" placeholder="3000" required></label>
+    <label class="field"><span class="field-label">Saved already (₹)</span><input type="number" name="saved" min="0" step="1" value="0"></label>
+    <label class="field"><span class="field-label">Target date <small>(optional)</small></span><input type="date" name="target_date" min="{{ today_iso }}"></label>
+    <button type="submit" class="btn-primary btn-small">Create goal</button>
+  </form>
+</section>
+{% endblock %}

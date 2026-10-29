@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m with context %}
+{% block title %}Categories{% endblock %}
+
+{% block content %}
+{{ m.topbar("Categories", "See where your money goes — " ~ label ~ ".") }}
+
+<div class="preset-row range-row" role="group" aria-label="Date range">
+  {% for key, text in [('this_month', 'This month'), ('last_month', 'Last month'), ('last_30', 'Last 30 days'), ('all', 'All time')] %}
+    <a class="preset {{ 'on' if rng == key }}" href="{{ url_for('categories', range=key) }}">{{ text }}</a>
+  {% endfor %}
+</div>
+
+<section class="budget-summary" aria-label="Totals for {{ label }}">
+  <div class="card mini-stat"><span>Money received</span><b class="mono up">{{ total_inc|inr }}</b></div>
+  <div class="card mini-stat"><span>Spent</span><b class="mono down">{{ total_exp|inr }}</b></div>
+  <div class="card mini-stat"><span>Left over</span><b class="mono {{ 'down' if net < 0 }}">{{ net|inr }}</b></div>
+</section>
+
+{% if expense_rows %}
+<div class="mid-grid">
+  <section class="card panel">
+    <div class="panel-head"><div><h2>Where your money went</h2><p>Share of {{ total_exp|inr }} spent {{ label }}</p></div></div>
+    <ul class="bar-list">
+      {% for r in expense_rows %}
+      <li>
+        <div class="bar-top">
+          <span><span class="tx-icon tx-icon--sm" style="background: {{ r.color }}22; color: {{ r.color }}" aria-hidden="true">{{ r.icon }}</span> <b>{{ r.category }}</b></span>
+          <span class="mono">{{ r.total|inr }} <small>· {{ r.pct|round|int }}%</small></span>
+        </div>
+        <div class="progress-track" role="progressbar" aria-label="{{ r.category }} share of spending" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ r.pct|round|int }}">
+          <div class="progress-fill" style="width: {{ r.pct }}%; background: {{ r.color }}"></div>
+        </div>
+        <div class="bar-sub">{{ r.count }} transaction{{ 's' if r.count != 1 }} · average {{ r.avg|inr }} ·
+          <a href="{{ url_for('transactions', category=r.category, type='expense') }}">view</a></div>
+      </li>
+      {% endfor %}
+    </ul>
+  </section>
+
+  <section class="card panel">
+    <div class="panel-head"><div><h2>Breakdown chart</h2><p>Expenses by category</p></div></div>
+    <div class="donut-wrap"><canvas id="categoryChart" aria-label="Doughnut chart of spending by category" role="img"></canvas></div>
+    {% if biggest %}
+      <p class="guide-text">Biggest single expense: <b>{{ biggest.description or biggest.category }}</b> · <span class="mono">{{ biggest.amount|inr }}</span> on {{ biggest.tx_date|fdate }}.</p>
+    {% endif %}
+  </section>
+</div>
+{% else %}
+<section class="card panel">
+  {% call m.empty("🧭", "No spending to show " ~ label, "Record an expense and it will appear here, grouped by category with its share of your total.") %}
+    <button type="button" class="btn-primary btn-small" data-open-tx>+ Add an expense</button>
+  {% endcall %}
+</section>
+{% endif %}
+
+<section class="card panel">
+  <div class="panel-head"><div><h2>Money received</h2><p>Income by category, {{ label }}</p></div></div>
+  {% if income_rows %}
+  <ul class="bar-list">
+    {% for r in income_rows %}
+    <li>
+      <div class="bar-top"><span><span class="tx-icon tx-icon--sm" style="background: {{ r.color }}22; color: {{ r.color }}" aria-hidden="true">{{ r.icon }}</span> <b>{{ r.category }}</b></span>
+        <span class="mono up">{{ r.total|inr }} <small>· {{ r.pct|round|int }}%</small></span></div>
+      <div class="progress-track" role="progressbar" aria-label="{{ r.category }} share of income" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ r.pct|round|int }}">
+        <div class="progress-fill" style="width: {{ r.pct }}%; background: #1F9D6B"></div></div>
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}{{ m.empty("💸", "No income recorded " ~ label, "Add your allowance, scholarship or part-time income to see it here.") }}{% endif %}
+</section>
+
+<section class="card panel" id="manage">
+  <div class="panel-head"><div><h2>Manage categories</h2><p>Add your own categories. Ones you've used in transactions can't be deleted.</p></div></div>
+  <div class="cat-manage">
+    {% for kind, title in [('expense', 'Expense categories'), ('income', 'Income categories')] %}
+    <div>
+      <h3>{{ title }}</h3>
+      <ul class="cat-list">
+        {% for c in manage if c.kind == kind %}
+        <li><span>{{ c.icon }} {{ c.name }}{% if c.is_custom %} <span class="badge-sample">Yours</span>{% endif %}</span>
+          {% if c.is_custom and not c.uses %}
+            <form method="post" action="{{ url_for('delete_category', cid=c.id) }}" data-confirm="Delete the category “{{ c.name }}”?"><button class="link-btn link-danger" type="submit">Delete</button></form>
+          {% elif c.uses %}<small>{{ c.uses }} used</small>{% endif %}
+        </li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endfor %}
+  </div>
+  <form method="post" action="{{ url_for('add_category') }}" class="add-budget">
+    <strong>New category</strong>
+    <label class="field"><span class="field-label">Name</span><input name="name" maxlength="24" placeholder="e.g. Gym" required></label>
+    <label class="field"><span class="field-label">Type</span><select name="kind"><option value="expense">Expense</option><option value="income">Income</option></select></label>
+    <label class="field"><span class="field-label">Icon</span><select name="icon">{% for i in icons %}<option value="{{ i }}">{{ i }}</option>{% endfor %}</select></label>
+    <button type="submit" class="btn-primary btn-small">Add category</button>
+  </form>
+</section>
+{% endblock %}
+
+{% block page_data %}
+<script id="ft-page" type="application/json">{{ {"labels": expense_rows|map(attribute='category')|list, "values": expense_rows|map(attribute='total')|list, "colors": expense_rows|map(attribute='color')|list}|tojson }}</script>
+{% endblock %}
+{% block scripts_before %}{% if expense_rows %}<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>{% endif %}{% endblock %}

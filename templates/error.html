@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m with context %}
+{% block title %}{{ title }}{% endblock %}
+{% block content %}
+<section class="card panel" style="margin-top:40px">
+  {% call m.empty("🧭", title, message) %}
+    <a class="btn-primary btn-small" href="{{ url_for('dashboard') }}">Back to Dashboard</a>
+  {% endcall %}
+</section>
+{% endblock %}
